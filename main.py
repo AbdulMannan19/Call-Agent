@@ -15,12 +15,6 @@ if not os.getenv("GOOGLE_API_KEY"):
     print("Please set your API key in the .env file or as an environment variable.")
     sys.exit(1)
 
-if sys.version_info < (3, 11, 0):
-    import taskgroup, exceptiongroup
-
-    asyncio.TaskGroup = taskgroup.TaskGroup
-    asyncio.ExceptionGroup = exceptiongroup.ExceptionGroup
-
 FORMAT = pyaudio.paInt16
 CHANNELS = 1
 SEND_SAMPLE_RATE = 16000
@@ -35,14 +29,11 @@ CONFIG = {"response_modalities": ["AUDIO"]}
 
 pya = pyaudio.PyAudio()
 
-
 class AudioLoop:
     def __init__(self):
         self.audio_in_queue = None
         self.out_queue = None
         self.session = None
-
-
 
     async def send_audio(self):
         while True:
@@ -69,7 +60,6 @@ class AudioLoop:
             await self.out_queue.put({"data": data, "mime_type": "audio/pcm"})
 
     async def receive_audio(self):
-        "Background task to reads from the websocket and write pcm chunks to the output queue"
         while True:
             turn = self.session.receive()
             async for response in turn:
@@ -113,8 +103,6 @@ class AudioLoop:
                 tg.create_task(self.listen_audio())
                 tg.create_task(self.receive_audio())
                 tg.create_task(self.play_audio())
-
-                # Keep running until interrupted
                 await asyncio.Event().wait()
 
         except asyncio.CancelledError:
@@ -126,8 +114,7 @@ class AudioLoop:
 
 
 if __name__ == "__main__":
-    print("Starting audio-only conversation with Gemini...")
-    print("Just start talking! Press Ctrl+C to quit")
+    print("App Started")
     main = AudioLoop()
     try:
         asyncio.run(main.run())
