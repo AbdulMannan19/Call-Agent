@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 from supabase import create_client, Client
 from typing import Optional, Dict, Any, List
 import json
+from datetime import datetime
 
 load_dotenv()
 
@@ -46,11 +47,11 @@ class SupabaseFoodOrderingTools:
             if hasattr(items, '_pb') or 'MapComposite' in str(type(items)):
                 items = dict(items)
             
-            # Convert all keys to strings for JSON serialization
+            # Convert all keys to strings and values to integers for JSONB
             items_dict = {str(k): int(v) for k, v in items.items()}
             
             order_data = {
-                'items': json.dumps(items_dict),  # Store as JSONB
+                'items': items_dict,  # Store as JSONB (Python dict, not JSON string)
                 'total_amount': total_amount,
                 'special_requests': special_requests
             }
@@ -70,6 +71,7 @@ class SupabaseFoodOrderingTools:
             
             delivery_data = {
                 'order_id': order_id,
+                'order_date': datetime.now().isoformat(),
                 'delivery_address': delivery_address,
                 'status': 'PREPARING',
                 'customer_phone_number': customer_phone_number

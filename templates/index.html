@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Food Ordering Voice Bot</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 350px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-right: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .sidebar h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 18px;
+            border-bottom: 2px solid #667eea;
+            padding-bottom: 10px;
+        }
+
+        .function-call {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 12px;
+            margin-bottom: 10px;
+            border-radius: 0 8px 8px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .function-call.success {
+            border-left-color: #28a745;
+        }
+
+        .function-call.error {
+            border-left-color: #dc3545;
+        }
+
+        .function-name {
+            font-weight: bold;
+            color: #667eea;
+            font-size: 14px;
+        }
+
+        .function-args {
+            font-size: 12px;
+            color: #666;
+            margin: 5px 0;
+        }
+
+        .function-result {
+            font-size: 12px;
+            color: #333;
+            background: #e9ecef;
+            padding: 8px;
+            border-radius: 4px;
+            margin-top: 5px;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+
+        .timestamp {
+            font-size: 10px;
+            color: #999;
+            text-align: right;
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+        }
+
+        .chat-container {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        }
+
+        .chat-header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .chat-header h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .status {
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status.listening {
+            background: #fff3cd;
+            color: #856404;
+        }
+
+        .chat-messages {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 0;
+            max-height: 400px;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            display: flex;
+            align-items: flex-start;
+        }
+
+        .message.user {
+            justify-content: flex-end;
+        }
+
+        .message-content {
+            max-width: 70%;
+            padding: 12px 18px;
+            border-radius: 18px;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+
+        .message.user .message-content {
+            background: #667eea;
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+
+        .message.bot .message-content {
+            background: #f1f3f4;
+            color: #333;
+            border-bottom-left-radius: 4px;
+        }
+
+        .message-time {
+            font-size: 11px;
+            color: #999;
+            margin: 5px 10px 0;
+        }
+
+        .controls {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 25px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+            transform: translateY(-2px);
+        }
+
+        .test-input {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .test-input input {
+            flex: 1;
+            padding: 10px 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 25px;
+            font-size: 14px;
+            outline: none;
+            transition: border-color 0.3s ease;
+        }
+
+        .test-input input:focus {
+            border-color: #667eea;
+        }
+
+        .btn-test {
+            background: #28a745;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .btn-test:hover {
+            background: #218838;
+        }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #667eea;
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #5a6fd8;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>🔧 Function Calls</h2>
+        <div id="function-calls"></div>
+    </div>
+
+    <div class="main-content">
+        <div class="chat-container">
+            <div class="chat-header">
+                <h1>🍕 Food Ordering Voice Bot</h1>
+                <div id="status" class="status connected">Ready to connect</div>
+            </div>
+
+            <div class="chat-messages" id="chat-messages">
+                <div class="message bot">
+                    <div class="message-content">
+                        Welcome! Click "Start Voice" to begin ordering food with voice commands.
+                    </div>
+                    <div class="message-time">Ready</div>
+                </div>
+            </div>
+
+            <div class="controls">
+                <button id="start-btn" class="btn btn-primary">🎤 Start Voice</button>
+                <button id="stop-btn" class="btn btn-secondary" disabled>⏹️ Stop Voice</button>
+            </div>
+
+            <div class="test-input">
+                <input type="text" id="test-input" placeholder="Type a message to simulate voice input (for testing)">
+                <button id="test-btn" class="btn-test">Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        const chatMessages = document.getElementById('chat-messages');
+        const functionCalls = document.getElementById('function-calls');
+        const status = document.getElementById('status');
+        const startBtn = document.getElementById('start-btn');
+        const stopBtn = document.getElementById('stop-btn');
+        const testInput = document.getElementById('test-input');
+        const testBtn = document.getElementById('test-btn');
+
+        // Socket event handlers
+        socket.on('connect', function() {
+            updateStatus('Connected to server', 'connected');
+        });
+
+        socket.on('status', function(data) {
+            updateStatus(data.message, 'listening');
+        });
+
+        socket.on('user_input', function(data) {
+            addMessage(data.text, 'user', data.timestamp);
+        });
+
+        socket.on('bot_response', function(data) {
+            addMessage(data.text, 'bot', data.timestamp);
+        });
+
+        socket.on('function_call', function(data) {
+            addFunctionCall(data.function_name, data.arguments, data.timestamp);
+        });
+
+        socket.on('function_result', function(data) {
+            updateFunctionResult(data.function_name, data.result, 'success');
+        });
+
+        socket.on('function_error', function(data) {
+            updateFunctionResult(data.function_name, data.error, 'error');
+        });
+
+        // UI functions
+        function updateStatus(message, type) {
+            status.textContent = message;
+            status.className = `status ${type}`;
+        }
+
+        function addMessage(text, sender, timestamp) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender}`;
+            messageDiv.innerHTML = `
+                <div class="message-content">${text}</div>
+                <div class="message-time">${timestamp}</div>
+            `;
+            chatMessages.appendChild(messageDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+
+        function addFunctionCall(functionName, args, timestamp) {
+            const callDiv = document.createElement('div');
+            callDiv.className = 'function-call';
+            callDiv.id = `call-${functionName}-${timestamp}`;
+            callDiv.innerHTML = `
+                <div class="function-name">${functionName}()</div>
+                <div class="function-args">${JSON.stringify(args, null, 2)}</div>
+                <div class="timestamp">${timestamp}</div>
+            `;
+            functionCalls.insertBefore(callDiv, functionCalls.firstChild);
+        }
+
+        function updateFunctionResult(functionName, result, type) {
+            const calls = functionCalls.querySelectorAll('.function-call');
+            for (let call of calls) {
+                if (call.querySelector('.function-name').textContent === `${functionName}()`) {
+                    call.classList.add(type);
+                    const resultDiv = document.createElement('div');
+                    resultDiv.className = 'function-result';
+                    resultDiv.textContent = JSON.stringify(result, null, 2);
+                    call.appendChild(resultDiv);
+                    break;
+                }
+            }
+        }
+
+        // Button handlers
+        startBtn.addEventListener('click', function() {
+            socket.emit('start_voice');
+            startBtn.disabled = true;
+            stopBtn.disabled = false;
+        });
+
+        stopBtn.addEventListener('click', function() {
+            socket.emit('stop_voice');
+            startBtn.disabled = false;
+            stopBtn.disabled = true;
+        });
+
+        testBtn.addEventListener('click', function() {
+            const text = testInput.value.trim();
+            if (text) {
+                socket.emit('simulate_user_input', {text: text});
+                testInput.value = '';
+            }
+        });
+
+        testInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                testBtn.click();
+            }
+        });
+    </script>
+</body>
+</html>
