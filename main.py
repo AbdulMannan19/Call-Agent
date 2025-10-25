@@ -1,122 +1,151 @@
 import asyncio
-import os
-import sys
-import traceback
+from typing import Dict, Any
+from voice_call import AudioLoop
+from sql_tools import SupabaseFoodOrderingTools
+from config import SYSTEM_PROMPT
 
-import pyaudio
-
-from google import genai
-from dotenv import load_dotenv
-
-load_dotenv()
-
-if not os.getenv("GOOGLE_API_KEY"):
-    print("Error: GOOGLE_API_KEY not found in environment variables.")
-    print("Please set your API key in the .env file or as an environment variable.")
-    sys.exit(1)
-
-FORMAT = pyaudio.paInt16
-CHANNELS = 1
-SEND_SAMPLE_RATE = 16000
-RECEIVE_SAMPLE_RATE = 24000
-CHUNK_SIZE = 1024
-
-MODEL = "models/gemini-2.0-flash-live-001"
-
-client = genai.Client(http_options={"api_version": "v1beta"})
-
-CONFIG = {"response_modalities": ["AUDIO"]}
-
-pya = pyaudio.PyAudio()
-
-class AudioLoop:
+class FoodOrderingVoiceBot:
     def __init__(self):
-        self.audio_in_queue = None
-        self.out_queue = None
-        self.session = None
-
-    async def send_audio(self):
-        while True:
-            audio_data = await self.out_queue.get()
-            await self.session.send(input=audio_data)
-
-    async def listen_audio(self):
-        mic_info = pya.get_default_input_device_info()
-        self.audio_stream = await asyncio.to_thread(
-            pya.open,
-            format=FORMAT,
-            channels=CHANNELS,
-            rate=SEND_SAMPLE_RATE,
-            input=True,
-            input_device_index=mic_info["index"],
-            frames_per_buffer=CHUNK_SIZE,
+        """Initialize the food ordering voice bot"""
+        # Initialize database tools
+        self.db_tools = SupabaseFoodOrderingTools()
+        
+        # Current customer phone number (set when call starts)
+        self.current_customer_phone = "+1234567890"  # Default for testing
+        
+        # Create function declarations for Gemini
+        self.function_declarations = self._create_function_declarations()
+        
+        # Initialize audio loop with system prompt, tools, and function handler
+        self.audio_loop = AudioLoop(
+            system_prompt=SYSTEM_PROMPT,
+            tools=self.function_declarations,
+            function_handler=self._handle_function_call
         )
-        if __debug__:
-            kwargs = {"exception_on_overflow": False}
-        else:
-            kwargs = {}
-        while True:
-            data = await asyncio.to_thread(self.audio_stream.read, CHUNK_SIZE, **kwargs)
-            await self.out_queue.put({"data": data, "mime_type": "audio/pcm"})
-
-    async def receive_audio(self):
-        while True:
-            turn = self.session.receive()
-            async for response in turn:
-                if data := response.data:
-                    self.audio_in_queue.put_nowait(data)
-                    continue
-                if text := response.text:
-                    print(text, end="")
-
-            # If you interrupt the model, it sends a turn_complete.
-            # For interruptions to work, we need to stop playback.
-            # So empty out the audio queue because it may have loaded
-            # much more audio than has played yet.
-            while not self.audio_in_queue.empty():
-                self.audio_in_queue.get_nowait()
-
-    async def play_audio(self):
-        stream = await asyncio.to_thread(
-            pya.open,
-            format=FORMAT,
-            channels=CHANNELS,
-            rate=RECEIVE_SAMPLE_RATE,
-            output=True,
-        )
-        while True:
-            bytestream = await self.audio_in_queue.get()
-            await asyncio.to_thread(stream.write, bytestream)
-
-    async def run(self):
+    
+    def _create_function_declarations(self):
+        """Create function declarations for Gemini function calling"""
+        return [
+            {
+                "name": "get_menu_items",
+                "description": "Fetch available menu items, optionally filtered by category",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "category": {
+                            "type": "string",
+                            "description": "Optional category filter (Mains, Beverages, Sides, Desserts)"
+                        }
+                    }
+                }
+            },
+            {
+                "name": "create_order",
+                "description": "Create a new order with items and return order_id",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "items": {
+                            "type": "object",
+                            "description": "Dictionary mapping item_id to quantity"
+                        },
+                        "special_requests": {
+                            "type": "string",
+                            "description": "Optional special requests from customer"
+                        }
+                    },
+                    "required": ["items"]
+                }
+            },
+            {
+                "name": "create_delivery",
+                "description": "Create delivery record for an order",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "order_id": {
+                            "type": "integer",
+                            "description": "ID of the order to create delivery for"
+                        },
+                        "delivery_address": {
+                            "type": "string",
+                            "description": "Customer's delivery address"
+                        }
+                    },
+                    "required": ["order_id", "delivery_address"]
+                }
+            },
+            {
+                "name": "get_order_status",
+                "description": "Get order status and details by customer phone number",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "phone_number": {
+                            "type": "string",
+                            "description": "Customer's phone number"
+                        }
+                    },
+                    "required": ["phone_number"]
+                }
+            }
+        ]
+    
+    async def _handle_function_call(self, function_name: str, arguments: Dict[str, Any]) -> Any:
+        """Handle function calls from Gemini"""
         try:
-            async with (
-                client.aio.live.connect(model=MODEL, config=CONFIG) as session,
-                asyncio.TaskGroup() as tg,
-            ):
-                self.session = session
+            print(f"Executing function: {function_name} with args: {arguments}")
+            
+            if function_name == "get_menu_items":
+                category = arguments.get("category")
+                return self.db_tools.get_menu_items(category)
+            
+            elif function_name == "create_order":
+                items = arguments.get("items", {})
+                print(f"Items type: {type(items)}, Items value: {items}")
+                
+                # Convert MapComposite to regular dict if needed
+                if hasattr(items, '_pb') or 'MapComposite' in str(type(items)):
+                    items = dict(items)
+                    print(f"Converted items: {items}")
+                
+                special_requests = arguments.get("special_requests")
+                return self.db_tools.create_order(items, special_requests)
+            
+            elif function_name == "create_delivery":
+                order_id = arguments.get("order_id")
+                delivery_address = arguments.get("delivery_address")
+                return self.db_tools.create_delivery(order_id, delivery_address, self.current_customer_phone)
+            
+            elif function_name == "get_order_status":
+                phone_number = arguments.get("phone_number")
+                return self.db_tools.get_order_status(phone_number)
+            
+            else:
+                return f"Unknown function: {function_name}"
+                
+        except Exception as e:
+            print(f"Error executing {function_name}: {str(e)}")
+            return f"Error executing {function_name}: {str(e)}"
+    
+    def set_customer_phone(self, phone_number: str):
+        """Set the current customer's phone number"""
+        self.current_customer_phone = phone_number
+        print(f"Customer phone number set to: {phone_number}")
+    
+    async def start(self):
+        """Start the voice bot"""
+        print("Starting Food Ordering Voice Bot...")
+        print(f"Customer phone: {self.current_customer_phone}")
+        print("Speak to place your order!")
+        
+        await self.audio_loop.run()
 
-                self.audio_in_queue = asyncio.Queue()
-                self.out_queue = asyncio.Queue(maxsize=5)
-
-                tg.create_task(self.send_audio())
-                tg.create_task(self.listen_audio())
-                tg.create_task(self.receive_audio())
-                tg.create_task(self.play_audio())
-                await asyncio.Event().wait()
-
-        except asyncio.CancelledError:
-            pass
-        except ExceptionGroup as EG:
-            if hasattr(self, 'audio_stream'):
-                self.audio_stream.close()
-            traceback.print_exception(EG)
-
-
+# Main execution
 if __name__ == "__main__":
-    print("App Started")
-    main = AudioLoop()
+    print("Food Ordering Voice Bot Started")
+    bot = FoodOrderingVoiceBot()
     try:
-        asyncio.run(main.run())
+        asyncio.run(bot.start())
     except KeyboardInterrupt:
         print("\nGoodbye!")
