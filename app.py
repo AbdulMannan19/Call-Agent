@@ -1,199 +1,243 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template
 from flask_socketio import SocketIO, emit
 import asyncio
 import threading
-import json
+import base64
+import pyaudio
 from datetime import datetime
-from voice_call import AudioLoop
-from sql_utils import SupabaseFoodOrderingTools
-from config import SYSTEM_PROMPT
+import os
+from google import genai
+import sys
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+if sys.version_info < (3, 11, 0):
+    import taskgroup, exceptiongroup
+    asyncio.TaskGroup = taskgroup.TaskGroup
+    asyncio.ExceptionGroup = exceptiongroup.ExceptionGroup
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'food-ordering-bot-secret-key-2024'
+app.config['SECRET_KEY'] = 'your-secret-key'
 socketio = SocketIO(app, cors_allowed_origins="*")
 
-class WebVoiceBot:
+# Audio configuration
+FORMAT = pyaudio.paInt16
+CHANNELS = 1
+SEND_SAMPLE_RATE = 16000
+RECEIVE_SAMPLE_RATE = 24000
+CHUNK_SIZE = 1024
+
+MODEL = "models/gemini-2.0-flash-live-001"
+CONFIG = {"response_modalities": ["AUDIO"]}
+
+# Initialize Google AI client
+client = genai.Client(http_options={"api_version": "v1beta"})
+pya = pyaudio.PyAudio()
+
+class VoiceBot:
     def __init__(self):
-        """Initialize the web voice bot"""
-        self.db_tools = SupabaseFoodOrderingTools()
-        self.current_customer_phone = "+1234567890"
-        self.function_declarations = self._create_function_declarations()
-        self.audio_loop = None
-        self.is_running = False
+        self.session = None
+        self.audio_in_queue = None
+        self.out_queue = None
+        self.audio_stream = None
+        self.is_listening = False
+        self.tasks = []
         
-    def _create_function_declarations(self):
-        """Create function declarations for Gemini function calling"""
-        return [
-            {
-                "name": "get_menu_items",
-                "description": "Fetch available menu items, optionally filtered by category",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "category": {
-                            "type": "string",
-                            "description": "Optional category filter (Mains, Beverages, Sides, Desserts)"
-                        }
-                    }
-                }
-            },
-            {
-                "name": "create_order",
-                "description": "Create a new order with items and return order_id",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "items": {
-                            "type": "object",
-                            "description": "Dictionary mapping item_id to quantity"
-                        },
-                        "special_requests": {
-                            "type": "string",
-                            "description": "Optional special requests from customer"
-                        }
-                    },
-                    "required": ["items"]
-                }
-            },
-            {
-                "name": "create_delivery",
-                "description": "Create delivery record for an order",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "order_id": {
-                            "type": "integer",
-                            "description": "ID of the order to create delivery for"
-                        },
-                        "delivery_address": {
-                            "type": "string",
-                            "description": "Customer's delivery address"
-                        }
-                    },
-                    "required": ["order_id", "delivery_address"]
-                }
-            },
-            {
-                "name": "get_order_status",
-                "description": "Get order status and details by customer phone number",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "phone_number": {
-                            "type": "string",
-                            "description": "Customer's phone number"
-                        }
-                    },
-                    "required": ["phone_number"]
-                }
-            }
-        ]
-    
-    async def _handle_function_call(self, function_name: str, arguments: dict) -> any:
-        """Handle function calls and emit to frontend"""
+    async def start_session(self):
+        """Start the Live API session"""
         try:
-            # Emit function call to frontend
-            socketio.emit('function_call', {
-                'function_name': function_name,
-                'arguments': arguments,
-                'timestamp': datetime.now().strftime('%H:%M:%S')
-            })
+            self.session = await client.aio.live.connect(model=MODEL, config=CONFIG).__aenter__()
+            self.audio_in_queue = asyncio.Queue()
+            self.out_queue = asyncio.Queue(maxsize=5)
             
-            result = None
+            # Start background tasks
+            self.tasks = [
+                asyncio.create_task(self.send_realtime()),
+                asyncio.create_task(self.receive_audio()),
+                asyncio.create_task(self.play_audio())
+            ]
             
-            if function_name == "get_menu_items":
-                category = arguments.get("category")
-                result = self.db_tools.get_menu_items(category)
-                
-            elif function_name == "create_order":
-                items = arguments.get("items", {})
-                if hasattr(items, '_pb') or 'MapComposite' in str(type(items)):
-                    items = dict(items)
-                special_requests = arguments.get("special_requests")
-                result = self.db_tools.create_order(items, special_requests)
-                
-            elif function_name == "create_delivery":
-                order_id = arguments.get("order_id")
-                delivery_address = arguments.get("delivery_address")
-                result = self.db_tools.create_delivery(order_id, delivery_address, self.current_customer_phone)
-                
-            elif function_name == "get_order_status":
-                phone_number = arguments.get("phone_number")
-                result = self.db_tools.get_order_status(phone_number)
+            socketio.emit('status', {'message': 'Connected to Gemini Live API'})
+            return True
+        except Exception as e:
+            socketio.emit('status', {'message': f'Failed to connect: {str(e)}'})
+            return False
+    
+    async def stop_session(self):
+        """Stop the Live API session"""
+        if self.audio_stream:
+            self.audio_stream.stop_stream()
+            self.audio_stream.close()
             
-            # Emit function result to frontend
-            socketio.emit('function_result', {
-                'function_name': function_name,
-                'result': result,
-                'timestamp': datetime.now().strftime('%H:%M:%S')
-            })
+        for task in self.tasks:
+            task.cancel()
             
-            return result
+        if self.session:
+            await self.session.__aexit__(None, None, None)
+            
+        self.is_listening = False
+        socketio.emit('status', {'message': 'Disconnected'})
+    
+    async def start_listening(self):
+        """Start listening to microphone"""
+        if self.is_listening:
+            return
+            
+        try:
+            mic_info = pya.get_default_input_device_info()
+            self.audio_stream = await asyncio.to_thread(
+                pya.open,
+                format=FORMAT,
+                channels=CHANNELS,
+                rate=SEND_SAMPLE_RATE,
+                input=True,
+                input_device_index=mic_info["index"],
+                frames_per_buffer=CHUNK_SIZE,
+            )
+            
+            self.is_listening = True
+            self.tasks.append(asyncio.create_task(self.listen_audio()))
+            socketio.emit('status', {'message': 'Listening...'})
             
         except Exception as e:
-            error_msg = f"Error executing {function_name}: {str(e)}"
-            socketio.emit('function_error', {
-                'function_name': function_name,
-                'error': error_msg,
-                'timestamp': datetime.now().strftime('%H:%M:%S')
-            })
-            return error_msg
+            socketio.emit('status', {'message': f'Microphone error: {str(e)}'})
+    
+    async def stop_listening(self):
+        """Stop listening to microphone"""
+        self.is_listening = False
+        if self.audio_stream:
+            self.audio_stream.stop_stream()
+            self.audio_stream.close()
+        socketio.emit('status', {'message': 'Stopped listening'})
+    
+    async def listen_audio(self):
+        """Listen to audio from microphone and send to API"""
+        kwargs = {"exception_on_overflow": False} if __debug__ else {}
+        
+        while self.is_listening:
+            try:
+                data = await asyncio.to_thread(self.audio_stream.read, CHUNK_SIZE, **kwargs)
+                await self.out_queue.put({"data": data, "mime_type": "audio/pcm"})
+            except Exception as e:
+                print(f"Audio listening error: {e}")
+                break
+    
+    async def send_realtime(self):
+        """Send audio data to the Live API"""
+        while True:
+            try:
+                msg = await self.out_queue.get()
+                if self.session:
+                    await self.session.send(input=msg)
+            except Exception as e:
+                print(f"Send error: {e}")
+                break
+    
+    async def receive_audio(self):
+        """Receive audio responses from the Live API"""
+        while True:
+            try:
+                if not self.session:
+                    break
+                    
+                turn = self.session.receive()
+                async for response in turn:
+                    if data := response.data:
+                        self.audio_in_queue.put_nowait(data)
+                        continue
+                    if text := response.text:
+                        # Emit the bot's text response to frontend
+                        timestamp = datetime.now().strftime("%H:%M:%S")
+                        socketio.emit('bot_response', {
+                            'text': text, 
+                            'timestamp': timestamp
+                        })
+                
+                # Clear audio queue on interruption
+                while not self.audio_in_queue.empty():
+                    self.audio_in_queue.get_nowait()
+                    
+            except Exception as e:
+                print(f"Receive error: {e}")
+                break
+    
+    async def play_audio(self):
+        """Play audio responses"""
+        try:
+            stream = await asyncio.to_thread(
+                pya.open,
+                format=FORMAT,
+                channels=CHANNELS,
+                rate=RECEIVE_SAMPLE_RATE,
+                output=True,
+            )
+            
+            while True:
+                bytestream = await self.audio_in_queue.get()
+                await asyncio.to_thread(stream.write, bytestream)
+                
+        except Exception as e:
+            print(f"Audio playback error: {e}")
 
-# Initialize bot
-web_bot = WebVoiceBot()
+# Global voice bot instance
+voice_bot = VoiceBot()
 
 @app.route('/')
 def index():
-    """Serve the main page"""
     return render_template('index.html')
 
 @socketio.on('connect')
 def handle_connect():
-    """Handle client connection"""
     print('Client connected')
-    emit('status', {'message': 'Connected to voice bot'})
+    emit('status', {'message': 'Connected to server'})
 
 @socketio.on('disconnect')
 def handle_disconnect():
-    """Handle client disconnection"""
     print('Client disconnected')
 
 @socketio.on('start_voice')
 def handle_start_voice():
-    """Start voice bot"""
-    if not web_bot.is_running:
-        web_bot.is_running = True
-        emit('status', {'message': 'Voice bot started - speak now!'})
-        # Note: In a real implementation, you'd start the audio loop here
-        # For now, we'll simulate it
-        emit('bot_response', {
-            'text': 'Hello! Welcome to our food ordering service. How can I help you today?',
-            'timestamp': datetime.now().strftime('%H:%M:%S')
-        })
+    """Handle start voice command from frontend"""
+    def run_async():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        async def start_voice_session():
+            # Start session if not already started
+            if not voice_bot.session:
+                success = await voice_bot.start_session()
+                if not success:
+                    return
+            
+            # Start listening
+            await voice_bot.start_listening()
+        
+        loop.run_until_complete(start_voice_session())
+    
+    thread = threading.Thread(target=run_async)
+    thread.daemon = True
+    thread.start()
 
 @socketio.on('stop_voice')
 def handle_stop_voice():
-    """Stop voice bot"""
-    web_bot.is_running = False
-    emit('status', {'message': 'Voice bot stopped'})
-
-@socketio.on('simulate_user_input')
-def handle_simulate_input(data):
-    """Simulate user input for testing"""
-    user_text = data.get('text', '')
-    emit('user_input', {
-        'text': user_text,
-        'timestamp': datetime.now().strftime('%H:%M:%S')
-    })
+    """Handle stop voice command from frontend"""
+    def run_async():
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(voice_bot.stop_listening())
     
-    # Simulate bot processing and function calls
-    if 'menu' in user_text.lower():
-        # Simulate function call
-        asyncio.run(web_bot._handle_function_call('get_menu_items', {}))
-        emit('bot_response', {
-            'text': 'Here are our available menu items. What would you like to order?',
-            'timestamp': datetime.now().strftime('%H:%M:%S')
-        })
+    thread = threading.Thread(target=run_async)
+    thread.daemon = True
+    thread.start()
+
+@socketio.on('simulate_voice_input')
+def handle_simulate_voice():
+    """Simulate voice input for testing"""
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    emit('user_input', {'text': 'Hello, I would like to order some food', 'timestamp': timestamp})
+    emit('bot_response', {'text': 'Hello! I\'d be happy to help you with your food order. What would you like to eat today?', 'timestamp': timestamp})
 
 if __name__ == '__main__':
-    socketio.run(app, debug=True, host='localhost', port=5000)
+    socketio.run(app, debug=True, host='0.0.0.0', port=5000)

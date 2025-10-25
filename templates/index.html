@@ -14,7 +14,7 @@
 
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: #f5f5f5;
             height: 100vh;
             display: flex;
             overflow: hidden;
@@ -22,9 +22,7 @@
 
         .sidebar {
             width: 350px;
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-right: 1px solid rgba(255, 255, 255, 0.2);
+            background: #e9ecef;
             padding: 20px;
             overflow-y: auto;
         }
@@ -33,16 +31,16 @@
             color: #333;
             margin-bottom: 20px;
             font-size: 18px;
-            border-bottom: 2px solid #667eea;
+            border-bottom: 2px solid #6c757d;
             padding-bottom: 10px;
         }
 
         .function-call {
             background: #f8f9fa;
-            border-left: 4px solid #667eea;
+            border-left: 4px solid #6c757d;
             padding: 12px;
             margin-bottom: 10px;
-            border-radius: 0 8px 8px 0;
+            border-radius: 8px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
 
@@ -56,7 +54,7 @@
 
         .function-name {
             font-weight: bold;
-            color: #667eea;
+            color: #495057;
             font-size: 14px;
         }
 
@@ -92,13 +90,13 @@
 
         .chat-container {
             flex: 1;
-            background: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
-            border-radius: 20px;
+            background: white;
+            margin: 20px;
+            border-radius: 10px;
             padding: 20px;
             display: flex;
             flex-direction: column;
-            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
         }
 
         .chat-header {
@@ -106,27 +104,14 @@
             margin-bottom: 20px;
         }
 
-        .chat-header h1 {
-            color: #333;
-            font-size: 28px;
-            margin-bottom: 10px;
-        }
-
         .status {
-            padding: 10px 20px;
-            border-radius: 25px;
+            padding: 8px 16px;
+            border-radius: 20px;
             font-size: 14px;
             font-weight: 500;
-        }
-
-        .status.connected {
-            background: #d4edda;
-            color: #155724;
-        }
-
-        .status.listening {
-            background: #fff3cd;
-            color: #856404;
+            background: #f8f9fa;
+            color: #495057;
+            display: inline-block;
         }
 
         .chat-messages {
@@ -155,7 +140,7 @@
         }
 
         .message.user .message-content {
-            background: #667eea;
+            background: #007bff;
             color: white;
             border-bottom-right-radius: 4px;
         }
@@ -175,75 +160,40 @@
         .controls {
             display: flex;
             justify-content: center;
-            gap: 15px;
-            margin-top: 20px;
+            margin-top: 40px;
+            padding-bottom: 20px;
         }
 
-        .btn {
-            padding: 12px 24px;
+        .mic-button {
+            width: 80px;
+            height: 80px;
             border: none;
-            border-radius: 25px;
-            font-size: 14px;
-            font-weight: 600;
+            border-radius: 50%;
+            background: #dc3545;
+            color: white;
+            font-size: 24px;
             cursor: pointer;
             transition: all 0.3s ease;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .btn-primary {
-            background: linear-gradient(45deg, #667eea, #764ba2);
-            color: white;
-        }
-
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-        }
-
-        .btn-secondary {
-            background: #6c757d;
-            color: white;
-        }
-
-        .btn-secondary:hover {
-            background: #5a6268;
-            transform: translateY(-2px);
-        }
-
-        .test-input {
             display: flex;
-            gap: 10px;
-            margin-top: 15px;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 15px rgba(220, 53, 69, 0.3);
         }
 
-        .test-input input {
-            flex: 1;
-            padding: 10px 15px;
-            border: 2px solid #e9ecef;
-            border-radius: 25px;
-            font-size: 14px;
-            outline: none;
-            transition: border-color 0.3s ease;
+        .mic-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 20px rgba(220, 53, 69, 0.4);
         }
 
-        .test-input input:focus {
-            border-color: #667eea;
-        }
-
-        .btn-test {
+        .mic-button.listening {
             background: #28a745;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 25px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 600;
+            animation: pulse 1.5s infinite;
         }
 
-        .btn-test:hover {
-            background: #218838;
+        @keyframes pulse {
+            0% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(40, 167, 69, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); }
         }
 
         /* Scrollbar styling */
@@ -257,12 +207,12 @@
         }
 
         ::-webkit-scrollbar-thumb {
-            background: #667eea;
+            background: #6c757d;
             border-radius: 3px;
         }
 
         ::-webkit-scrollbar-thumb:hover {
-            background: #5a6fd8;
+            background: #5a6268;
         }
     </style>
 </head>
@@ -275,27 +225,22 @@
     <div class="main-content">
         <div class="chat-container">
             <div class="chat-header">
-                <h1>🍕 Food Ordering Voice Bot</h1>
-                <div id="status" class="status connected">Ready to connect</div>
+                <div id="status" class="status">Ready to connect</div>
             </div>
 
             <div class="chat-messages" id="chat-messages">
-                <div class="message bot">
-                    <div class="message-content">
-                        Welcome! Click "Start Voice" to begin ordering food with voice commands.
-                    </div>
-                    <div class="message-time">Ready</div>
-                </div>
+                <!-- Messages will appear here -->
             </div>
 
             <div class="controls">
-                <button id="start-btn" class="btn btn-primary">🎤 Start Voice</button>
-                <button id="stop-btn" class="btn btn-secondary" disabled>⏹️ Stop Voice</button>
+                <button id="mic-btn" class="mic-button">🎤</button>
             </div>
-
-            <div class="test-input">
-                <input type="text" id="test-input" placeholder="Type a message to simulate voice input (for testing)">
-                <button id="test-btn" class="btn-test">Send</button>
+            
+            <!-- Temporary test button for simulation -->
+            <div style="text-align: center; margin-top: 20px;">
+                <button id="test-voice" style="padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 5px; cursor: pointer;">
+                    Test Voice (Simulate)
+                </button>
             </div>
         </div>
     </div>
@@ -305,18 +250,17 @@
         const chatMessages = document.getElementById('chat-messages');
         const functionCalls = document.getElementById('function-calls');
         const status = document.getElementById('status');
-        const startBtn = document.getElementById('start-btn');
-        const stopBtn = document.getElementById('stop-btn');
-        const testInput = document.getElementById('test-input');
-        const testBtn = document.getElementById('test-btn');
+        const micBtn = document.getElementById('mic-btn');
+        
+        let isListening = false;
 
         // Socket event handlers
         socket.on('connect', function() {
-            updateStatus('Connected to server', 'connected');
+            updateStatus('Connected to server');
         });
 
         socket.on('status', function(data) {
-            updateStatus(data.message, 'listening');
+            updateStatus(data.message);
         });
 
         socket.on('user_input', function(data) {
@@ -340,9 +284,8 @@
         });
 
         // UI functions
-        function updateStatus(message, type) {
+        function updateStatus(message) {
             status.textContent = message;
-            status.className = `status ${type}`;
         }
 
         function addMessage(text, sender, timestamp) {
@@ -360,9 +303,16 @@
             const callDiv = document.createElement('div');
             callDiv.className = 'function-call';
             callDiv.id = `call-${functionName}-${timestamp}`;
+            
+            // Format parameters nicely
+            let paramText = '';
+            if (args && Object.keys(args).length > 0) {
+                const params = Object.entries(args).map(([key, value]) => `${key}: ${JSON.stringify(value)}`).join(', ');
+                paramText = `(${params})`;
+            }
+            
             callDiv.innerHTML = `
-                <div class="function-name">${functionName}()</div>
-                <div class="function-args">${JSON.stringify(args, null, 2)}</div>
+                <div class="function-name">${functionName}${paramText}</div>
                 <div class="timestamp">${timestamp}</div>
             `;
             functionCalls.insertBefore(callDiv, functionCalls.firstChild);
@@ -371,7 +321,8 @@
         function updateFunctionResult(functionName, result, type) {
             const calls = functionCalls.querySelectorAll('.function-call');
             for (let call of calls) {
-                if (call.querySelector('.function-name').textContent === `${functionName}()`) {
+                const nameElement = call.querySelector('.function-name');
+                if (nameElement.textContent.startsWith(functionName)) {
                     call.classList.add(type);
                     const resultDiv = document.createElement('div');
                     resultDiv.className = 'function-result';
@@ -382,31 +333,26 @@
             }
         }
 
-        // Button handlers
-        startBtn.addEventListener('click', function() {
-            socket.emit('start_voice');
-            startBtn.disabled = true;
-            stopBtn.disabled = false;
-        });
-
-        stopBtn.addEventListener('click', function() {
-            socket.emit('stop_voice');
-            startBtn.disabled = false;
-            stopBtn.disabled = true;
-        });
-
-        testBtn.addEventListener('click', function() {
-            const text = testInput.value.trim();
-            if (text) {
-                socket.emit('simulate_user_input', {text: text});
-                testInput.value = '';
+        // Microphone button handler
+        micBtn.addEventListener('click', function() {
+            if (!isListening) {
+                // Start listening
+                socket.emit('start_voice');
+                micBtn.classList.add('listening');
+                isListening = true;
+                updateStatus('Listening...');
+            } else {
+                // Stop listening
+                socket.emit('stop_voice');
+                micBtn.classList.remove('listening');
+                isListening = false;
+                updateStatus('Ready to connect');
             }
         });
 
-        testInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                testBtn.click();
-            }
+        // Test voice simulation
+        document.getElementById('test-voice').addEventListener('click', function() {
+            socket.emit('simulate_voice_input');
         });
     </script>
 </body>
